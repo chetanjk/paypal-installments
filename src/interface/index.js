@@ -6,7 +6,7 @@ import { stringifyError } from 'belter/src';
 
 
 import type { InstallmentsFlowType } from '../types';
-import { getLogger, enableLoadingSpinner, disableLoadingSpinner } from '../lib';
+import { getLogger as getFlowLogger, enableLoadingSpinner, disableLoadingSpinner } from '../lib';
 import { FPTI_TRANSITION, FPTI_CONTEXT_TYPE } from '../constants';
 import { getInstallments } from '../api';
 
@@ -21,25 +21,17 @@ type installmentsProps = {|
     orderID : string,
     accessToken : string,
     cartAmount : string,
-    onPay : Function
+    onPay : Function,
+    getLogger? : Function
 |};
 
-export function initiateInstallments({ clientID, Installments, paymentMethodID, button, buyerCountry, orderID, accessToken, cartAmount, onPay } : installmentsProps) : Function {
+export function initiateInstallments({ clientID, Installments, paymentMethodID, button, buyerCountry, orderID, accessToken, cartAmount, onPay, getLogger = getFlowLogger } : installmentsProps) : Function {
     const inputs = {
         paymentToken:       paymentMethodID,
         country:            buyerCountry,
         token:              orderID,
         buyerAccessToken:   accessToken
     };
-    
-    getLogger()
-        .info('vault_merchant_installments_eligible')
-        .track({
-            [FPTI_KEY.TRANSITION]:   FPTI_TRANSITION.INSTALLMENTS_ELIGIBLE,
-            [FPTI_KEY.CONTEXT_TYPE]: FPTI_CONTEXT_TYPE.ORDER_ID,
-            [FPTI_KEY.TOKEN]:        orderID,
-            [FPTI_KEY.CONTEXT_ID]:   orderID
-        }).flush();
     
     return getInstallments(inputs).then((installmentsResponse) => {
         if (installmentsResponse && installmentsResponse.getInstallmentsForOnboardingFlows) {

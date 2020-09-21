@@ -17,7 +17,8 @@ export function Installments({ data, cspNonce, close, content } : InstallmentsPr
     const [ selectedOption, setSelectedOption ] = useState(null);
     const [ selectedIndex, setSelectedIndex ] = useState(null);
     
-    const selectOption = (option, index) => {
+    const selectOption = (event, option, index) => {
+        event.preventDefault();
         setSelectedOption(option);
         setSelectedIndex(index);
 
@@ -67,20 +68,22 @@ export function Installments({ data, cspNonce, close, content } : InstallmentsPr
                         margin:0;
                         padding:0;
                     }
-                    .installments li a {
+                    .installments li .list-wrap {
                         border: 1px solid #fff;
                         border-bottom-color: #ccc;
                         padding: 13px;
                         margin: 0 10px;
                         display: flex;
+                        text-decoration: none;
+                        color: inherit;
                     }
-                    .installments li a:hover {
+                    .installments li .list-wrap:hover {
                         background: #F6F7FA;
                     }
-                    .installments li a:active {
+                    .installments li .list-wrap:active {
                         border:1px solid #000;
                     }
-                    .installments li.selected a {
+                    .installments li.selected .list-wrap {
                         background: #F6F7FA;
                     }
                     .installments .months {
@@ -125,6 +128,7 @@ export function Installments({ data, cspNonce, close, content } : InstallmentsPr
                         font-weight: bold;
                         font-size: 1em;
                         transition: background-color 240ms ease;
+                        cursor: pointer;
                     }
                     .installments .pay-btn:hover,
                     .installments .pay-btn:focus {
@@ -168,8 +172,8 @@ export function Installments({ data, cspNonce, close, content } : InstallmentsPr
                 `}
             </style>
 
-            <div class='installments' tabIndex='0'>
-                <a class="close-btn" onClick={ closeInstallments } />
+            <div class='installments'>
+                <a class="close-btn" onClick={ closeInstallments } href="#"  aria-label="close" role="button" />
                 <div className="header">
                     <h3 className="title">{content.header}</h3>
                 </div>
@@ -178,7 +182,7 @@ export function Installments({ data, cspNonce, close, content } : InstallmentsPr
                         data.options.map((option, i) => {
                             return (
                                 <li className={ (selectedIndex === i) ? 'selected' : '' }>
-                                    <a onClick={ () => { selectOption(option, i); } }>
+                                    <a class="list-wrap" href="#" onClick={ (event) => { selectOption(event, option, i); } }>
                                         <div className="months">{ renderContent(content.term, option) }</div>
                                         <div className="details">
                                             { option.term === 1 ?

@@ -376,6 +376,312 @@ window.installmentsModal = function(modules) {
     function hooks_module_k(n, t) {
         return "function" == typeof t ? t(n) : t;
     }
+    function utils_isPromise(item) {
+        try {
+            if (!item) return !1;
+            if ("undefined" != typeof Promise && item instanceof Promise) return !0;
+            if ("undefined" != typeof window && "function" == typeof window.Window && item instanceof window.Window) return !1;
+            if ("undefined" != typeof window && "function" == typeof window.constructor && item instanceof window.constructor) return !1;
+            var _toString = {}.toString;
+            if (_toString) {
+                var name = _toString.call(item);
+                if ("[object Window]" === name || "[object global]" === name || "[object DOMWindow]" === name) return !1;
+            }
+            if ("function" == typeof item.then) return !0;
+        } catch (err) {
+            return !1;
+        }
+        return !1;
+    }
+    var dispatchedErrors = [];
+    var possiblyUnhandledPromiseHandlers = [];
+    var activeCount = 0;
+    var flushPromise;
+    function flushActive() {
+        if (!activeCount && flushPromise) {
+            var promise = flushPromise;
+            flushPromise = null;
+            promise.resolve();
+        }
+    }
+    function startActive() {
+        activeCount += 1;
+    }
+    function endActive() {
+        activeCount -= 1;
+        flushActive();
+    }
+    var promise_ZalgoPromise = function() {
+        function ZalgoPromise(handler) {
+            var _this = this;
+            this.resolved = void 0;
+            this.rejected = void 0;
+            this.errorHandled = void 0;
+            this.value = void 0;
+            this.error = void 0;
+            this.handlers = void 0;
+            this.dispatching = void 0;
+            this.stack = void 0;
+            this.resolved = !1;
+            this.rejected = !1;
+            this.errorHandled = !1;
+            this.handlers = [];
+            if (handler) {
+                var _result;
+                var _error;
+                var resolved = !1;
+                var rejected = !1;
+                var isAsync = !1;
+                startActive();
+                try {
+                    handler((function(res) {
+                        if (isAsync) _this.resolve(res); else {
+                            resolved = !0;
+                            _result = res;
+                        }
+                    }), (function(err) {
+                        if (isAsync) _this.reject(err); else {
+                            rejected = !0;
+                            _error = err;
+                        }
+                    }));
+                } catch (err) {
+                    endActive();
+                    this.reject(err);
+                    return;
+                }
+                endActive();
+                isAsync = !0;
+                resolved ? this.resolve(_result) : rejected && this.reject(_error);
+            }
+        }
+        var _proto = ZalgoPromise.prototype;
+        _proto.resolve = function(result) {
+            if (this.resolved || this.rejected) return this;
+            if (utils_isPromise(result)) throw new Error("Can not resolve promise with another promise");
+            this.resolved = !0;
+            this.value = result;
+            this.dispatch();
+            return this;
+        };
+        _proto.reject = function(error) {
+            var _this2 = this;
+            if (this.resolved || this.rejected) return this;
+            if (utils_isPromise(error)) throw new Error("Can not reject promise with another promise");
+            if (!error) {
+                var _err = error && "function" == typeof error.toString ? error.toString() : {}.toString.call(error);
+                error = new Error("Expected reject to be called with Error, got " + _err);
+            }
+            this.rejected = !0;
+            this.error = error;
+            this.errorHandled || setTimeout((function() {
+                _this2.errorHandled || function(err, promise) {
+                    if (-1 === dispatchedErrors.indexOf(err)) {
+                        dispatchedErrors.push(err);
+                        setTimeout((function() {
+                            throw err;
+                        }), 1);
+                        for (var j = 0; j < possiblyUnhandledPromiseHandlers.length; j++) possiblyUnhandledPromiseHandlers[j](err, promise);
+                    }
+                }(error, _this2);
+            }), 1);
+            this.dispatch();
+            return this;
+        };
+        _proto.asyncReject = function(error) {
+            this.errorHandled = !0;
+            this.reject(error);
+            return this;
+        };
+        _proto.dispatch = function() {
+            var resolved = this.resolved, rejected = this.rejected, handlers = this.handlers;
+            if (!this.dispatching && (resolved || rejected)) {
+                this.dispatching = !0;
+                startActive();
+                var chain = function(firstPromise, secondPromise) {
+                    return firstPromise.then((function(res) {
+                        secondPromise.resolve(res);
+                    }), (function(err) {
+                        secondPromise.reject(err);
+                    }));
+                };
+                for (var i = 0; i < handlers.length; i++) {
+                    var _handlers$i = handlers[i], onSuccess = _handlers$i.onSuccess, onError = _handlers$i.onError, promise = _handlers$i.promise;
+                    var _result2 = void 0;
+                    if (resolved) try {
+                        _result2 = onSuccess ? onSuccess(this.value) : this.value;
+                    } catch (err) {
+                        promise.reject(err);
+                        continue;
+                    } else if (rejected) {
+                        if (!onError) {
+                            promise.reject(this.error);
+                            continue;
+                        }
+                        try {
+                            _result2 = onError(this.error);
+                        } catch (err) {
+                            promise.reject(err);
+                            continue;
+                        }
+                    }
+                    if (_result2 instanceof ZalgoPromise && (_result2.resolved || _result2.rejected)) {
+                        _result2.resolved ? promise.resolve(_result2.value) : promise.reject(_result2.error);
+                        _result2.errorHandled = !0;
+                    } else utils_isPromise(_result2) ? _result2 instanceof ZalgoPromise && (_result2.resolved || _result2.rejected) ? _result2.resolved ? promise.resolve(_result2.value) : promise.reject(_result2.error) : chain(_result2, promise) : promise.resolve(_result2);
+                }
+                handlers.length = 0;
+                this.dispatching = !1;
+                endActive();
+            }
+        };
+        _proto.then = function(onSuccess, onError) {
+            if (onSuccess && "function" != typeof onSuccess && !onSuccess.call) throw new Error("Promise.then expected a function for success handler");
+            if (onError && "function" != typeof onError && !onError.call) throw new Error("Promise.then expected a function for error handler");
+            var promise = new ZalgoPromise;
+            this.handlers.push({
+                promise: promise,
+                onSuccess: onSuccess,
+                onError: onError
+            });
+            this.errorHandled = !0;
+            this.dispatch();
+            return promise;
+        };
+        _proto.catch = function(onError) {
+            return this.then(void 0, onError);
+        };
+        _proto.finally = function(onFinally) {
+            if (onFinally && "function" != typeof onFinally && !onFinally.call) throw new Error("Promise.finally expected a function");
+            return this.then((function(result) {
+                return ZalgoPromise.try(onFinally).then((function() {
+                    return result;
+                }));
+            }), (function(err) {
+                return ZalgoPromise.try(onFinally).then((function() {
+                    throw err;
+                }));
+            }));
+        };
+        _proto.timeout = function(time, err) {
+            var _this3 = this;
+            if (this.resolved || this.rejected) return this;
+            var timeout = setTimeout((function() {
+                _this3.resolved || _this3.rejected || _this3.reject(err || new Error("Promise timed out after " + time + "ms"));
+            }), time);
+            return this.then((function(result) {
+                clearTimeout(timeout);
+                return result;
+            }));
+        };
+        _proto.toPromise = function() {
+            if ("undefined" == typeof Promise) throw new TypeError("Could not find Promise");
+            return Promise.resolve(this);
+        };
+        ZalgoPromise.resolve = function(value) {
+            return value instanceof ZalgoPromise ? value : utils_isPromise(value) ? new ZalgoPromise((function(resolve, reject) {
+                return value.then(resolve, reject);
+            })) : (new ZalgoPromise).resolve(value);
+        };
+        ZalgoPromise.reject = function(error) {
+            return (new ZalgoPromise).reject(error);
+        };
+        ZalgoPromise.asyncReject = function(error) {
+            return (new ZalgoPromise).asyncReject(error);
+        };
+        ZalgoPromise.all = function(promises) {
+            var promise = new ZalgoPromise;
+            var count = promises.length;
+            var results = [];
+            if (!count) {
+                promise.resolve(results);
+                return promise;
+            }
+            var chain = function(i, firstPromise, secondPromise) {
+                return firstPromise.then((function(res) {
+                    results[i] = res;
+                    0 == (count -= 1) && promise.resolve(results);
+                }), (function(err) {
+                    secondPromise.reject(err);
+                }));
+            };
+            for (var i = 0; i < promises.length; i++) {
+                var prom = promises[i];
+                if (prom instanceof ZalgoPromise) {
+                    if (prom.resolved) {
+                        results[i] = prom.value;
+                        count -= 1;
+                        continue;
+                    }
+                } else if (!utils_isPromise(prom)) {
+                    results[i] = prom;
+                    count -= 1;
+                    continue;
+                }
+                chain(i, ZalgoPromise.resolve(prom), promise);
+            }
+            0 === count && promise.resolve(results);
+            return promise;
+        };
+        ZalgoPromise.hash = function(promises) {
+            var result = {};
+            var awaitPromises = [];
+            var _loop = function(key) {
+                if (promises.hasOwnProperty(key)) {
+                    var value = promises[key];
+                    utils_isPromise(value) ? awaitPromises.push(value.then((function(res) {
+                        result[key] = res;
+                    }))) : result[key] = value;
+                }
+            };
+            for (var key in promises) _loop(key);
+            return ZalgoPromise.all(awaitPromises).then((function() {
+                return result;
+            }));
+        };
+        ZalgoPromise.map = function(items, method) {
+            return ZalgoPromise.all(items.map(method));
+        };
+        ZalgoPromise.onPossiblyUnhandledException = function(handler) {
+            return function(handler) {
+                possiblyUnhandledPromiseHandlers.push(handler);
+                return {
+                    cancel: function() {
+                        possiblyUnhandledPromiseHandlers.splice(possiblyUnhandledPromiseHandlers.indexOf(handler), 1);
+                    }
+                };
+            }(handler);
+        };
+        ZalgoPromise.try = function(method, context, args) {
+            if (method && "function" != typeof method && !method.call) throw new Error("Promise.try expected a function");
+            var result;
+            startActive();
+            try {
+                result = method.apply(context, args || []);
+            } catch (err) {
+                endActive();
+                return ZalgoPromise.reject(err);
+            }
+            endActive();
+            return ZalgoPromise.resolve(result);
+        };
+        ZalgoPromise.delay = function(_delay) {
+            return new ZalgoPromise((function(resolve) {
+                setTimeout(resolve, _delay);
+            }));
+        };
+        ZalgoPromise.isPromise = function(value) {
+            return !!(value && value instanceof ZalgoPromise) || utils_isPromise(value);
+        };
+        ZalgoPromise.flush = function() {
+            return function(Zalgo) {
+                var promise = flushPromise = flushPromise || new Zalgo;
+                flushActive();
+                return promise;
+            }(ZalgoPromise);
+        };
+        return ZalgoPromise;
+    }();
     function _extends() {
         return (_extends = Object.assign || function(target) {
             for (var i = 1; i < arguments.length; i++) {
@@ -739,6 +1045,23 @@ window.installmentsModal = function(modules) {
         for (var key in obj) obj.hasOwnProperty(key) && result.push(obj[key]);
         return result;
     }));
+    function isDocumentReady() {
+        return Boolean(document.body) && "complete" === document.readyState;
+    }
+    function isDocumentInteractive() {
+        return Boolean(document.body) && "interactive" === document.readyState;
+    }
+    memoize((function() {
+        return new promise_ZalgoPromise((function(resolve) {
+            if (isDocumentReady() || isDocumentInteractive()) return resolve();
+            var interval = setInterval((function() {
+                if (isDocumentReady() || isDocumentInteractive()) {
+                    clearInterval(interval);
+                    return resolve();
+                }
+            }), 10);
+        }));
+    }));
     Object.create(Error.prototype);
     function Installments(_ref) {
         var data = _ref.data, cspNonce = _ref.cspNonce, close = _ref.close, content = _ref.content;
@@ -751,15 +1074,17 @@ window.installmentsModal = function(modules) {
         };
         return v(p, null, v("style", {
             nonce: cspNonce
-        }, "\n                    .installments {\n                        outline-style: none;\n                        padding-bottom: 20px;\n                        position: relative;\n                    }\n\n                    .installments .header {\n                        box-shadow: 0 2px 3px 0 rgba(0,0,0,0.2);\n                        padding-right: 50px;\n                        position: relative;\n                    }\n\n                    .installments h3 {\n                        padding: 15px 20px;\n                        margin:0;\n                        font-weight: normal;\n                        font-size: 1em;\n                    }\n\n                    .installments ul {\n                        margin:0;\n                        padding:0;\n                    }\n                    .installments li a {\n                        border: 1px solid #fff;\n                        border-bottom-color: #ccc;\n                        padding: 13px;\n                        margin: 0 10px;\n                        display: flex;\n                    }\n                    .installments li a:hover {\n                        background: #F6F7FA;\n                    }\n                    .installments li a:active {\n                        border:1px solid #000;\n                    }\n                    .installments li.selected a {\n                        background: #F6F7FA;\n                    }\n                    .installments .months {\n                        align-items: center;\n                        display: flex;\n                        width: 50px;\n                        position: relative;\n                    }\n                    .installments .months:after {\n                        content: \"\";\n                        width: 1px;\n                        top: 0;\n                        bottom: 0;\n                        background: #ccc;\n                        position: absolute;\n                        right: 15px;\n                    }\n                    .installments .details {\n                        font-size: 0.9em;\n                    }\n                    .installments .details .price {\n                        display: block;\n                        font-weight:bold;\n                        margin-bottom:6px;\n                    }\n                    .installments .agree-info {\n                        font-size: 0.9em;\n                        text-align: center;\n                    }\n                    \n                    .installments .btn-container {\n                        text-align: center;\n                        padding: 15px;\n                    }\n                    .installments .pay-btn{\n                        border: 0;\n                        background: #2C2E2F;\n                        padding: 10px 20px;\n                        border-radius: 25px;\n                        line-height: 1.5em;\n                        color: #fff;\n                        font-weight: bold;\n                        font-size: 1em;\n                        transition: background-color 240ms ease;\n                    }\n                    .installments .pay-btn:hover,\n                    .installments .pay-btn:focus {\n                        filter: brightness(1.2);\n                        outline: 0;\n                    }\n                    .installments .pay-btn:active,\n                    .installments .pay-btn:focus {\n                        text-decoration: underline;                    \n                    }\n                    .installments .pay-btn .amount{\n                        margin-left:5px;\n                    }\n\n                    .installments .close-btn {\n                        position: absolute;\n                        right: 16px;\n                        top: 16px;\n                        width: 16px;\n                        height: 16px;\n                        opacity: 0.6;\n                        z-index: 1;\n                        cursor: pointer;\n                    }\n                    .installments .close-btn:hover {\n                        opacity: 1;\n                    }\n                    .installments .close-btn:before, \n                    .installments .close-btn:after {\n                        position: absolute;\n                        left: 8px;\n                        content: ' ';\n                        height: 16px;\n                        width: 2px;\n                        background-color: #000;\n                        transform: rotate(45deg);\n                    }\n                    .installments .close-btn:after {\n                        transform: rotate(-45deg);\n                    }\n                "), v("div", {
-            class: "installments",
-            tabIndex: "0"
+        }, "\n                    .installments {\n                        outline-style: none;\n                        padding-bottom: 20px;\n                        position: relative;\n                    }\n\n                    .installments .header {\n                        box-shadow: 0 2px 3px 0 rgba(0,0,0,0.2);\n                        padding-right: 50px;\n                        position: relative;\n                    }\n\n                    .installments h3 {\n                        padding: 15px 20px;\n                        margin:0;\n                        font-weight: normal;\n                        font-size: 1em;\n                    }\n\n                    .installments ul {\n                        margin:0;\n                        padding:0;\n                    }\n                    .installments li .list-wrap {\n                        border: 1px solid #fff;\n                        border-bottom-color: #ccc;\n                        padding: 13px;\n                        margin: 0 10px;\n                        display: flex;\n                        text-decoration: none;\n                        color: inherit;\n                    }\n                    .installments li .list-wrap:hover {\n                        background: #F6F7FA;\n                    }\n                    .installments li .list-wrap:active {\n                        border:1px solid #000;\n                    }\n                    .installments li.selected .list-wrap {\n                        background: #F6F7FA;\n                    }\n                    .installments .months {\n                        align-items: center;\n                        display: flex;\n                        width: 50px;\n                        position: relative;\n                    }\n                    .installments .months:after {\n                        content: \"\";\n                        width: 1px;\n                        top: 0;\n                        bottom: 0;\n                        background: #ccc;\n                        position: absolute;\n                        right: 15px;\n                    }\n                    .installments .details {\n                        font-size: 0.9em;\n                    }\n                    .installments .details .price {\n                        display: block;\n                        font-weight:bold;\n                        margin-bottom:6px;\n                    }\n                    .installments .agree-info {\n                        font-size: 0.9em;\n                        text-align: center;\n                    }\n                    \n                    .installments .btn-container {\n                        text-align: center;\n                        padding: 15px;\n                    }\n                    .installments .pay-btn{\n                        border: 0;\n                        background: #2C2E2F;\n                        padding: 10px 20px;\n                        border-radius: 25px;\n                        line-height: 1.5em;\n                        color: #fff;\n                        font-weight: bold;\n                        font-size: 1em;\n                        transition: background-color 240ms ease;\n                        cursor: pointer;\n                    }\n                    .installments .pay-btn:hover,\n                    .installments .pay-btn:focus {\n                        filter: brightness(1.2);\n                        outline: 0;\n                    }\n                    .installments .pay-btn:active,\n                    .installments .pay-btn:focus {\n                        text-decoration: underline;                    \n                    }\n                    .installments .pay-btn .amount{\n                        margin-left:5px;\n                    }\n\n                    .installments .close-btn {\n                        position: absolute;\n                        right: 16px;\n                        top: 16px;\n                        width: 16px;\n                        height: 16px;\n                        opacity: 0.6;\n                        z-index: 1;\n                        cursor: pointer;\n                    }\n                    .installments .close-btn:hover {\n                        opacity: 1;\n                    }\n                    .installments .close-btn:before, \n                    .installments .close-btn:after {\n                        position: absolute;\n                        left: 8px;\n                        content: ' ';\n                        height: 16px;\n                        width: 2px;\n                        background-color: #000;\n                        transform: rotate(45deg);\n                    }\n                    .installments .close-btn:after {\n                        transform: rotate(-45deg);\n                    }\n                "), v("div", {
+            class: "installments"
         }, v("a", {
             class: "close-btn",
             onClick: function() {
                 close();
                 return data.onClose();
-            }
+            },
+            href: "#",
+            "aria-label": "close",
+            role: "button"
         }), v("div", {
             className: "header"
         }, v("h3", {
@@ -768,12 +1093,15 @@ window.installmentsModal = function(modules) {
             return v("li", {
                 className: selectedIndex === i ? "selected" : ""
             }, v("a", {
-                onClick: function() {
-                    !function(option, index) {
+                class: "list-wrap",
+                href: "#",
+                onClick: function(event) {
+                    !function(event, option, index) {
+                        event.preventDefault();
                         setSelectedOption(option);
                         setSelectedIndex(index);
                         option.onSelect(option);
-                    }(option, i);
+                    }(event, option, i);
                 }
             }, v("div", {
                 className: "months"

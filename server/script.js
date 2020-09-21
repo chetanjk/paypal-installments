@@ -17,7 +17,12 @@ export async function compileLocalInstallmentsClientScript() : Promise<{| script
 }
 
 export async function getInstallmentsClientScript({ logBuffer, cache, debug = false } : {| debug : boolean, logBuffer : ?LoggerBufferType, cache : ?CacheType |} = {}) : Promise<{| script : string, version : string |}> {
-    if (isLocal()) {
+    const val = true;
+    // eslint-disable-next-line no-console
+    console.log('-------------getInstallmentsClientScript');
+    if (isLocal() || val) {
+        // eslint-disable-next-line no-console
+        console.log('-------------getInstallmentsClientScript---local');
         return await compileLocalInstallmentsClientScript();
     }
 
