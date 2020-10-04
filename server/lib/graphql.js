@@ -1,200 +1,215 @@
-/* @flow */
+"use strict";
 
-import { params as gqlParams, query as gqlQuery, types as gqlTypes } from 'typed-graphqlify';
+exports.__esModule = true;
+exports.graphQLBatch = graphQLBatch;
+exports.pruneQuery = pruneQuery;
+exports.buildQuery = buildQuery;
+exports.graphqlTypes = void 0;
 
-import type { ExpressRequest } from '../types';
-import { HTTP_HEADER } from '../config';
+var _typedGraphqlify = require("typed-graphqlify");
 
-import { isDefined, isEmpty } from './util';
+var _config = require("../config");
 
-export type GraphQL = (ExpressRequest, $ReadOnlyArray<{| query : string, variables : Object |}>, opts? : {| accessToken? : string, clientMetadataID? : string |}) => Promise<$ReadOnlyArray<{| result : Object |}>>;
+var _util = require("./util");
 
-// eslint-disable-next-line flowtype/require-exact-type
-export type GraphQLBatch = {
-    // eslint-disable-next-line no-undef
-    <V, R>({| query : string, variables : V, accessToken? : ?string, clientMetadataID? : string |}) : Promise<R>,
-    flush : () => void
+function graphQLBatch(req, graphQL) {
+  let batch = [];
+  let accessToken;
+  let clientMetadataID = req.get(_config.HTTP_HEADER.CLIENT_METADATA_ID);
+  let timer;
+
+  const batchedGraphQL = async ({
+    query,
+    variables,
+    accessToken: callerAccessToken,
+    clientMetadataID: callerClientMetadataID
+  }) => {
+    return await new Promise((resolve, reject) => {
+      if (callerAccessToken) {
+        if (accessToken && callerAccessToken !== accessToken) {
+          throw new Error(`Access token for graphql call already set`);
+        }
+
+        accessToken = callerAccessToken;
+      }
+
+      if (callerClientMetadataID) {
+        if (clientMetadataID && callerClientMetadataID !== clientMetadataID) {
+          throw new Error(`Client Metadata id for graphql call already set`);
+        }
+
+        clientMetadataID = callerClientMetadataID;
+      }
+
+      batch.push({
+        query,
+        variables,
+        resolve,
+        reject
+      });
+      timer = setTimeout(() => {
+        batchedGraphQL.flush();
+      }, 0);
+    });
+  };
+
+  batchedGraphQL.flush = async () => {
+    clearTimeout(timer);
+
+    if (!batch.length) {
+      return;
+    }
+
+    const currentBatch = batch;
+    batch = [];
+    const payload = currentBatch.map(({
+      query,
+      variables
+    }) => {
+      return {
+        query,
+        variables
+      };
+    });
+    let response;
+    let gqlError;
+
+    try {
+      response = await graphQL(req, payload, {
+        accessToken,
+        clientMetadataID
+      });
+    } catch (err) {
+      gqlError = err;
+    }
+
+    for (let i = 0; i < currentBatch.length; i++) {
+      const {
+        resolve,
+        reject
+      } = currentBatch[i];
+
+      if (gqlError) {
+        reject(gqlError);
+        continue;
+      }
+
+      const batchItem = response && response[i];
+
+      if (!batchItem) {
+        reject(new Error(`No response from gql`));
+        continue;
+      }
+
+      const {
+        result,
+        error
+      } = batchItem;
+
+      if (gqlError || error) {
+        reject(gqlError || error);
+      } else {
+        resolve(result);
+      }
+    }
+  };
+
+  return batchedGraphQL;
+}
+
+const graphqlTypes = {
+  boolean: _typedGraphqlify.types.boolean,
+  string: _typedGraphqlify.types.string
 };
+exports.graphqlTypes = graphqlTypes;
 
-export function graphQLBatch(req : ExpressRequest, graphQL : GraphQL) : GraphQLBatch {
-    let batch = [];
-    let accessToken;
-    let clientMetadataID = req.get(HTTP_HEADER.CLIENT_METADATA_ID);
-    let timer;
+function isGraphQLType(val) {
+  for (const type of Object.values(graphqlTypes)) {
+    if (val === type) {
+      return true;
+    }
+  }
 
-    const batchedGraphQL = async ({ query, variables, accessToken: callerAccessToken, clientMetadataID: callerClientMetadataID }) => {
-        return await new Promise((resolve, reject) => {
-            if (callerAccessToken) {
-                if (accessToken && callerAccessToken !== accessToken) {
-                    throw new Error(`Access token for graphql call already set`);
-                }
-
-                accessToken = callerAccessToken;
-            }
-
-            if (callerClientMetadataID) {
-                if (clientMetadataID && callerClientMetadataID !== clientMetadataID) {
-                    throw new Error(`Client Metadata id for graphql call already set`);
-                }
-
-                clientMetadataID = callerClientMetadataID;
-            }
-
-            batch.push({ query, variables, resolve, reject });
-
-            timer = setTimeout(() => {
-                batchedGraphQL.flush();
-            }, 0);
-        });
-    };
-
-    batchedGraphQL.flush = async () => {
-        clearTimeout(timer);
-
-        if (!batch.length) {
-            return;
-        }
-
-        const currentBatch = batch;
-        batch = [];
-
-        const payload = currentBatch.map(({ query, variables }) => {
-            return { query, variables };
-        });
-
-        let response : $ReadOnlyArray<Object>;
-        let gqlError;
-
-        try {
-            response = await graphQL(req, payload, { accessToken, clientMetadataID });
-        } catch (err) {
-            gqlError = err;
-        }
-        
-        for (let i = 0; i < currentBatch.length; i++) {
-            const { resolve, reject } = currentBatch[i];
-
-            if (gqlError) {
-                reject(gqlError);
-                continue;
-            }
-
-            const batchItem = response && response[i];
-
-            if (!batchItem) {
-                reject(new Error(`No response from gql`));
-                continue;
-            }
-
-            const { result, error } = batchItem;
-
-            if (gqlError || error) {
-                reject(gqlError || error);
-            } else {
-                resolve(result);
-            }
-        }
-    };
-
-    return batchedGraphQL;
+  return false;
 }
 
-export const graphqlTypes = {
-    boolean: gqlTypes.boolean,
-    string:  gqlTypes.string
-};
+function treeShakeQuery(query) {
+  const result = {};
 
-function isGraphQLType(val : mixed) : boolean {
-    for (const type of Object.values(graphqlTypes)) {
-        if (val === type) {
-            return true;
-        }
+  for (const key of Object.keys(query)) {
+    const value = query[key];
+
+    if (!(0, _util.isDefined)(value)) {
+      continue;
     }
 
-    return false;
+    if (isGraphQLType(value)) {
+      result[key] = value;
+      continue;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      const treeShakedQuery = treeShakeQuery(value);
+
+      if (!(0, _util.isEmpty)(treeShakedQuery)) {
+        result[key] = treeShakedQuery;
+      }
+
+      continue;
+    }
+
+    throw new Error(`Unrecognized type: ${typeof value}`);
+  }
+
+  return result;
 }
 
-type Query = {|
-    [ string ] : Symbol | Query
-|};
+function pruneQuery(query, existingData) {
+  const result = {};
 
-function treeShakeQuery(query : Query) : Query {
-    const result = {};
+  for (const key of Object.keys(query)) {
+    const value = query[key]; // $FlowFixMe
 
-    for (const key of Object.keys(query)) {
-        const value = query[key];
+    const existingValue = existingData[key];
 
-        if (!isDefined(value)) {
-            continue;
-        }
-
-        if (isGraphQLType(value)) {
-            result[key] = value;
-            continue;
-        }
-  
-        if (typeof value === 'object' && value !== null) {
-            const treeShakedQuery = treeShakeQuery(value);
-            if (!isEmpty(treeShakedQuery)) {
-                result[key] = treeShakedQuery;
-            }
-            continue;
-        }
-
-        throw new Error(`Unrecognized type: ${ typeof value }`);
+    if (!(0, _util.isDefined)(existingValue)) {
+      result[key] = value;
+      continue;
     }
 
-    return result;
+    if (!(0, _util.isDefined)(value) || isGraphQLType(value)) {
+      continue;
+    }
+
+    if (typeof value === 'object' && value !== null) {
+      if (typeof existingValue !== 'object' || existingValue === null) {
+        throw new Error(`Expected existing value to be object`);
+      }
+
+      result[key] = pruneQuery(value, existingValue);
+      continue;
+    }
+
+    throw new Error(`Unrecognized type: ${typeof value}`);
+  }
+
+  return result;
 }
 
-export function pruneQuery<T>(query : Query, existingData : T) : Query {
-    const result = {};
+function buildQuery({
+  name,
+  key,
+  inputTypes,
+  inputs,
+  query
+}) {
+  const treeShakedQuery = treeShakeQuery(query);
 
-    for (const key of Object.keys(query)) {
-        const value = query[key];
-        // $FlowFixMe
-        const existingValue = existingData[key];
+  if ((0, _util.isEmpty)(treeShakedQuery)) {
+    return;
+  }
 
-        if (!isDefined(existingValue)) {
-            result[key] = value;
-            continue;
-        }
-
-        if (!isDefined(value) || isGraphQLType(value)) {
-            continue;
-        }
-            
-        if (typeof value === 'object' && value !== null) {
-            if (typeof existingValue !== 'object' || existingValue === null) {
-                throw new Error(`Expected existing value to be object`);
-            }
-
-            result[key] = pruneQuery(value, existingValue);
-            continue;
-        }
-
-        throw new Error(`Unrecognized type: ${ typeof value }`);
-    }
-
-    return result;
-}
-
-type BuildQueryOptions<I, V> = {|
-    name : string,
-    key : string,
-    inputTypes : I,
-    inputs : V,
-    query : Query
-|};
-
-export function buildQuery<I, V>({ name, key, inputTypes, inputs, query } : BuildQueryOptions<I, V>) : ?string {
-    const treeShakedQuery = treeShakeQuery(query);
-
-    if (isEmpty(treeShakedQuery)) {
-        return;
-    }
-
-    return gqlQuery(name, gqlParams(inputTypes, {
-        [key]: gqlParams(inputs, treeShakedQuery)
-    }));
+  return (0, _typedGraphqlify.query)(name, (0, _typedGraphqlify.params)(inputTypes, {
+    [key]: (0, _typedGraphqlify.params)(inputs, treeShakedQuery)
+  }));
 }

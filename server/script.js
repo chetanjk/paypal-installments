@@ -1,34 +1,56 @@
-/* @flow */
+"use strict";
 
-import { join } from 'path';
+exports.__esModule = true;
+exports.compileLocalInstallmentsClientScript = compileLocalInstallmentsClientScript;
+exports.getInstallmentsClientScript = getInstallmentsClientScript;
 
-import { ENV } from '@paypal/sdk-constants';
+var _path = require("path");
 
-import type { CacheType } from './types';
-import { INSTALLMENTS_CLIENT_JS, INSTALLMENTS_CLIENT_MIN_JS, WEBPACK_CONFIG } from './config';
-import { isLocal, compileWebpack, babelRequire, type LoggerBufferType } from './lib';
-import { getPayPalSmartPaymentButtonsWatcher } from './watchers';
+var _sdkConstants = require("@paypal/sdk-constants");
 
-export async function compileLocalInstallmentsClientScript() : Promise<{| script : string, version : string |}> {
-    const root = join(__dirname, '../');
-    const { WEBPACK_CONFIG_INSTALLMENTS_DEBUG } = babelRequire(join(root, WEBPACK_CONFIG));
-    const script = await compileWebpack(WEBPACK_CONFIG_INSTALLMENTS_DEBUG, root);
-    return { script, version: ENV.LOCAL };
+var _config = require("./config");
+
+var _lib = require("./lib");
+
+var _watchers = require("./watchers");
+
+async function compileLocalInstallmentsClientScript() {
+  const root = (0, _path.join)(__dirname, '../');
+  const {
+    WEBPACK_CONFIG_INSTALLMENTS_DEBUG
+  } = (0, _lib.babelRequire)((0, _path.join)(root, _config.WEBPACK_CONFIG));
+  const script = await (0, _lib.compileWebpack)(WEBPACK_CONFIG_INSTALLMENTS_DEBUG, root);
+  return {
+    script,
+    version: _sdkConstants.ENV.LOCAL
+  };
 }
 
-export async function getInstallmentsClientScript({ logBuffer, cache, debug = false } : {| debug : boolean, logBuffer : ?LoggerBufferType, cache : ?CacheType |} = {}) : Promise<{| script : string, version : string |}> {
-    const val = true;
+async function getInstallmentsClientScript({
+  logBuffer,
+  cache,
+  debug = false
+} = {}) {
+  const val = true; // eslint-disable-next-line no-console
+
+  console.log('-------------getInstallmentsClientScript');
+
+  if ((0, _lib.isLocal)() || val) {
     // eslint-disable-next-line no-console
-    console.log('-------------getInstallmentsClientScript');
-    if (isLocal() || val) {
-        // eslint-disable-next-line no-console
-        console.log('-------------getInstallmentsClientScript---local');
-        return await compileLocalInstallmentsClientScript();
-    }
+    console.log('-------------getInstallmentsClientScript---local');
+    return await compileLocalInstallmentsClientScript();
+  }
 
-    const watcher = getPayPalSmartPaymentButtonsWatcher({ logBuffer, cache });
-    const { version } = await watcher.get();
-    const script = await watcher.read(debug ? INSTALLMENTS_CLIENT_JS : INSTALLMENTS_CLIENT_MIN_JS);
-
-    return { script, version };
+  const watcher = (0, _watchers.getPayPalSmartPaymentButtonsWatcher)({
+    logBuffer,
+    cache
+  });
+  const {
+    version
+  } = await watcher.get();
+  const script = await watcher.read(debug ? _config.INSTALLMENTS_CLIENT_JS : _config.INSTALLMENTS_CLIENT_MIN_JS);
+  return {
+    script,
+    version
+  };
 }

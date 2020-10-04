@@ -1,54 +1,40 @@
-/* @flow */
+"use strict";
 
-import { ENV, DEFAULT_COUNTRY, COUNTRY_LANGS } from '@paypal/sdk-constants';
+exports.__esModule = true;
+exports.getParams = getParams;
 
-import type { ExpressRequest, ExpressResponse, LocaleType } from './types';
+var _sdkConstants = require("@paypal/sdk-constants");
 
-function getNonce(res : ExpressResponse) : string {
-    let nonce = res.locals && res.locals.nonce;
+function getNonce(res) {
+  let nonce = res.locals && res.locals.nonce;
 
-    if (!nonce || typeof nonce !== 'string') {
-        nonce = '';
-    }
+  if (!nonce || typeof nonce !== 'string') {
+    nonce = '';
+  }
 
-    return nonce;
+  return nonce;
 }
 
-type ParamsType = {|
-    env : $Values<typeof ENV>,
-    clientID : string,
-    locale? : LocaleType,
-    debug? : boolean
-|};
-
-type RequestParams = {|
-    env : $Values<typeof ENV>,
-    clientID : ?string,
-    cspNonce : string,
-    locale : LocaleType,
-    debug : boolean
-|};
-
-export function getParams(params : ParamsType, req : ExpressRequest, res : ExpressResponse) : RequestParams {
-    const {
-        env,
-        clientID,
-        locale = {},
-        debug = false
-    } = params;
-
-    const {
-        country = DEFAULT_COUNTRY,
-        lang = COUNTRY_LANGS[country][0]
-    } = locale;
-
-    const cspNonce = getNonce(res);
-
-    return {
-        env,
-        clientID,
-        cspNonce,
-        debug:  Boolean(debug),
-        locale: { country, lang }
-    };
+function getParams(params, req, res) {
+  const {
+    env,
+    clientID,
+    locale = {},
+    debug = false
+  } = params;
+  const {
+    country = _sdkConstants.DEFAULT_COUNTRY,
+    lang = _sdkConstants.COUNTRY_LANGS[country][0]
+  } = locale;
+  const cspNonce = getNonce(res);
+  return {
+    env,
+    clientID,
+    cspNonce,
+    debug: Boolean(debug),
+    locale: {
+      country,
+      lang
+    }
+  };
 }
